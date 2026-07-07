@@ -4,3 +4,4 @@
 .env
 **/.env
 backend/conf/llm.yaml
+backend/history/
