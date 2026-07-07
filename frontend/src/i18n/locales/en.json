@@ -1,0 +1,136 @@
+{
+    "app": {
+        "title": "llm speed test"
+    },
+    "common": {
+        "loading": "Loading…",
+        "or": "or",
+        "back": "← Back",
+        "clear": "← Clear",
+        "delete": "Delete",
+        "load": "Load",
+        "on": "On",
+        "off": "Off",
+        "prompt": "Prompt",
+        "baseUrl": "Base URL",
+        "token": "Token",
+        "models": "Models",
+        "model": "Model",
+        "channel": "Channel",
+        "error": "Error"
+    },
+    "nav": {
+        "review": "Record Review",
+        "bench": "Integration Test",
+        "config": "Channel Config"
+    },
+    "language": {
+        "label": "Language",
+        "zh": "中文",
+        "en": "English"
+    },
+    "bench": {
+        "title": "Integration Test",
+        "testParams": "Test Parameters",
+        "channelLabel": "Channel",
+        "modelLabel": "Model",
+        "concurrencyLabel": "Concurrency",
+        "thinkingLabel": "Thinking mode",
+        "noChannels": "(No channels — add one in Channel Config first)",
+        "defaultPrompt": "Introduce yourself in one sentence",
+        "running": "Running…",
+        "startTest": "Start Test",
+        "runningHint": "Running benchmark, please wait…",
+        "testResults": "Test Results",
+        "errors": {
+            "selectChannel": "Please select a channel first",
+            "concurrencyMin": "Concurrency must be at least 1",
+            "concurrencyMax": "Concurrency cannot exceed 100",
+            "emptyResult": "Empty result or CSV parse failed"
+        },
+        "success": {
+            "testComplete": "Test complete, saved to history/{{filename}}"
+        }
+    },
+    "config": {
+        "title": "Channel Config",
+        "configured": "Configured Channels",
+        "noChannels": "No channels yet. Add one using the form below.",
+        "addChannel": "Add Channel",
+        "nameLabel": "Channel name",
+        "modelsLabel": "Models (comma or newline separated)",
+        "namePlaceholder": "e.g. nange / qianfan",
+        "baseUrlPlaceholder": "https://api.example.com/v1",
+        "tokenPlaceholder": "sk-...",
+        "modelsPlaceholder": "deepseek-v4-flash, deepseek-v4-think",
+        "submitting": "Submitting…",
+        "errors": {
+            "required": "name / base_url / token / models are all required"
+        },
+        "success": {
+            "added": "Channel {{name}} added",
+            "removed": "Channel {{name}} removed"
+        },
+        "confirm": {
+            "delete": "Delete channel {{name}}?"
+        }
+    },
+    "review": {
+        "title": "Record Review",
+        "dragDrop": "Drag CSV here",
+        "selectFile": "Select File",
+        "history": "History",
+        "noHistory": "No history yet. Run a test in Integration Test.",
+        "requestCount": "Requests",
+        "time": "Time",
+        "filename": "Filename",
+        "errors": {
+            "csvOnly": "Please select a .csv file",
+            "emptyResult": "Empty result or CSV parse failed"
+        },
+        "info": {
+            "loaded": "Loaded {{name}}"
+        }
+    },
+    "dashboard": {
+        "requestTotal": "Total Requests",
+        "avgTtfb": "Avg TTFB",
+        "avgTotal": "Avg Total Time",
+        "avgTokenRate": "Avg Token Rate",
+        "modelCount": "Models",
+        "chartTtfb": "First Token Latency (TTFB) ms",
+        "chartTotal": "Total Time ms",
+        "chartTokenRate": "Token Rate tok/s",
+        "requestDetail": "Request #{{index}}",
+        "timeline": "Latency Timeline",
+        "firstToken": "First Token",
+        "generate": "Generate",
+        "total": "Total",
+        "networkLatency": "Network Latency",
+        "connectionReused": "Connection Reused",
+        "connectionStatus": "Connection",
+        "probeLatency": "Probe Latency",
+        "replyContent": "Reply",
+        "columns": {
+            "index": "Index",
+            "model": "Model",
+            "ttfb_ms": "TTFB (ms)",
+            "total_ms": "Total (ms)",
+            "token_rate": "Token Rate (tok/s)",
+            "prompt_tokens": "Prompt Tokens",
+            "completion_tokens": "Completion Tokens",
+            "total_tokens": "Total Tokens",
+            "cached_tokens": "Cache Hit",
+            "finish_reason": "Finish Reason",
+            "error": "Error"
+        },
+        "fields": {
+            "tokenRate": "Token Rate",
+            "promptTokens": "Prompt Tokens",
+            "completionTokens": "Completion Tokens",
+            "totalTokens": "Total Tokens",
+            "cacheHit": "Cache Hit",
+            "finishReason": "Finish Reason"
+        }
+    }
+}
