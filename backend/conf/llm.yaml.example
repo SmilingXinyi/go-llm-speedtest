@@ -1,0 +1,24 @@
+# LLM Bench 渠道配置示例。
+#
+# 复制为 ../llm.yaml 并填入真实 base_url / token 后使用：
+#   cp conf/llm.yaml.example llm.yaml
+#
+# 每个渠道包含：
+#   name     渠道名，对应 --channel，并用于内部 Provider 路由（nange / qianfan 走专用解析，其它走 OpenAI 兼容）
+#   base_url OpenAI 兼容服务地址，如 https://api.example.com/v1
+#   token    Bearer Token
+#   models   该渠道支持的候选模型列表；--model 省略时取列表第一项
+
+channels:
+  - name: nange
+    base_url: https://api.example.com/v1
+    token: sk-replace-me
+    models:
+      - deepseek-v4-flash
+      - deepseek-v4-think
+
+  - name: qianfan
+    base_url: https://qianfan.baidubce.com/v2
+    token: sk-replace-me
+    models:
+      - ernie-4.0-8k
