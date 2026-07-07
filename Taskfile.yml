@@ -1,0 +1,100 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+# LLM Studio Taskfile.
+# Default `task build` produces single binary bin/llm-studio with embedded frontend;
+# API-only build (no frontend, fallback --static): task build-api
+# Development: task dev (API :8787 + Vite :5173 with /api proxy); API only: task server
+
+version: '3'
+
+vars:
+  FRONTEND_DIR: frontend
+  WEB_DIST: backend/internal/web/dist
+  BIN: bin
+  BINARY: bin/llm-studio
+
+tasks:
+  default:
+    desc: Build single binary with embedded frontend
+    cmds:
+      - task: build
+
+  install:
+    desc: Install project dependencies
+    deps:
+      - install-frontend
+      - install-backend
+
+  dev:
+    desc: Start development servers (API :8787 + Vite :5173)
+    deps:
+      - dev:api
+      - dev:web
+
+  server:
+    desc: Start API server (:8787)
+    deps:
+      - install-backend
+    dir: backend
+    cmds:
+      - go run ./cmd/server
+
+  dev:api:
+    internal: true
+    cmds:
+      - task: server
+
+  dev:web:
+    internal: true
+    deps:
+      - install-frontend
+    dir: '{{.FRONTEND_DIR}}'
+    cmds:
+      - pnpm dev
+
+  install-frontend:
+    internal: true
+    dir: '{{.FRONTEND_DIR}}'
+    cmds:
+      - pnpm install
+
+  install-backend:
+    internal: true
+    dir: backend
+    cmds:
+      - go mod download
+
+  frontend:
+    desc: Build frontend assets to frontend/dist
+    deps:
+      - install-frontend
+    dir: '{{.FRONTEND_DIR}}'
+    cmds:
+      - pnpm build
+
+  embed:
+    desc: Copy frontend/dist into Go module for go:embed
+    deps:
+      - frontend
+    cmds:
+      - rm -rf {{.WEB_DIST}}
+      - mkdir -p {{.WEB_DIST}}
+      - cp -r {{.FRONTEND_DIR}}/dist/. {{.WEB_DIST}}/
+
+  build:
+    desc: Build single binary with embedded frontend (requires -tags embed)
+    deps:
+      - embed
+    cmds:
+      - mkdir -p {{.BIN}}
+      - cd backend && go build -tags embed -o ../{{.BINARY}} ./cmd/llm-studio
+
+  build-api:
+    desc: Build API-only binary (no embedded frontend; use --static at runtime)
+    cmds:
+      - mkdir -p {{.BIN}}
+      - cd backend && go build -o ../{{.BINARY}} ./cmd/llm-studio
+
+  clean:
+    desc: Remove build artifacts
+    cmds:
+      - rm -rf {{.BIN}} {{.WEB_DIST}}
