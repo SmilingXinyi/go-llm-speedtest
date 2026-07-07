@@ -1,0 +1,6 @@
+.DS_Store
+
+# Secrets and local config
+.env
+**/.env
+backend/conf/llm.yaml
