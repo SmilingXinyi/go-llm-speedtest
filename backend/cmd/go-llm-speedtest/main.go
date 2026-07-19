@@ -27,11 +27,18 @@ import (
 )
 
 func main() {
-	// 第一个非 flag 参数视为子命令；省略时默认 server（裸跑即起服务）。
+	// First non-flag arg is the subcommand; default to server when omitted.
 	cmd := "server"
 	args := os.Args[1:]
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-		cmd, args = args[0], args[1:]
+	if len(args) > 0 {
+		switch args[0] {
+		case "-h", "--help", "help":
+			usage()
+			return
+		}
+		if !strings.HasPrefix(args[0], "-") {
+			cmd, args = args[0], args[1:]
+		}
 	}
 
 	switch cmd {
