@@ -181,6 +181,14 @@ function RowModal({row, onClose}: {row: Row; onClose: () => void}) {
                             </pre>
                         </div>
                     )}
+                    {row.reasoning_content && (
+                        <div className="flex flex-col gap-1">
+                            <div className="section-title">{t('dashboard.reasoningContent')}</div>
+                            <pre className="bg-surface2 rounded-lg p-3 text-xs whitespace-pre-wrap break-words max-h-60 overflow-auto">
+                                {row.reasoning_content}
+                            </pre>
+                        </div>
+                    )}
                     {row.content && (
                         <div className="flex flex-col gap-1">
                             <div className="section-title">{t('dashboard.replyContent')}</div>

@@ -29,60 +29,38 @@ type Config struct {
 }
 
 // Load 读取并解析指定路径的 llm.yaml 文件。
+// 不做全量字段校验：其它渠道缺 token 等不影响加载；发请求时由 Channel 只校验所选渠道。
 func Load(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("config: 读取配置文件失败 %s: %w", path, err)
-	}
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("config: 解析配置文件失败 %s: %w", path, err)
-	}
-	if err := cfg.validate(); err != nil {
-		return nil, err
-	}
-	return &cfg, nil
+	return loadLenient(path)
 }
 
-// validate 检查渠道配置完整性：每个渠道需有 name/base_url/token 且至少一个模型。
-// channels 为空时也视为错误（Load 用于跑基准，必须至少有一个渠道）。
-func (c *Config) validate() error {
-	if len(c.Channels) == 0 {
-		return errors.New("config: 未配置任何渠道（channels 为空）")
+// validateChannel 校验单个渠道字段完整性（新增渠道 / 选用渠道发请求时用）。
+func validateChannel(ch Channel) error {
+	if strings.TrimSpace(ch.Name) == "" {
+		return errors.New("config: 渠道缺少 name")
 	}
-	return c.validateChannels()
-}
-
-// validateChannels 校验每个渠道字段完整性，但允许 0 个渠道。
-// 供 ListChannels 等仅用于「列举」的场景：空配置是合法的「尚未配置」状态。
-func (c *Config) validateChannels() error {
-	seen := make(map[string]struct{}, len(c.Channels))
-	for i, ch := range c.Channels {
-		if strings.TrimSpace(ch.Name) == "" {
-			return fmt.Errorf("config: 第 %d 个渠道缺少 name", i+1)
-		}
-		if _, dup := seen[ch.Name]; dup {
-			return fmt.Errorf("config: 渠道名重复: %s", ch.Name)
-		}
-		seen[ch.Name] = struct{}{}
-		if ch.BaseURL == "" {
-			return fmt.Errorf("config: 渠道 %s 缺少 base_url", ch.Name)
-		}
-		if ch.Token == "" {
-			return fmt.Errorf("config: 渠道 %s 缺少 token", ch.Name)
-		}
-		if len(ch.Models) == 0 {
-			return fmt.Errorf("config: 渠道 %s 缺少 models", ch.Name)
-		}
+	if ch.BaseURL == "" {
+		return fmt.Errorf("config: 渠道 %s 缺少 base_url", ch.Name)
+	}
+	if ch.Token == "" {
+		return fmt.Errorf("config: 渠道 %s 缺少 token", ch.Name)
+	}
+	if len(ch.Models) == 0 {
+		return fmt.Errorf("config: 渠道 %s 缺少 models", ch.Name)
 	}
 	return nil
 }
 
-// Channel 按渠道名查找；找不到时返回错误。
+// Channel 按渠道名查找并校验该渠道完整性；找不到或不完整时返回错误。
+// 只校验 name 匹配的那一条，不检查其它渠道。
 func (c *Config) Channel(name string) (*Channel, error) {
 	for i := range c.Channels {
 		if strings.EqualFold(c.Channels[i].Name, name) {
-			return &c.Channels[i], nil
+			ch := &c.Channels[i]
+			if err := validateChannel(*ch); err != nil {
+				return nil, err
+			}
+			return ch, nil
 		}
 	}
 	return nil, fmt.Errorf("config: 未找到渠道 %q（请在 llm.yaml 中配置）", name)
@@ -102,19 +80,22 @@ func (ch *Channel) HasModel(model string) bool {
 	return false
 }
 
-// ListChannels 读取 path 指向的 llm.yaml，返回全部渠道。
-// 容忍 channels 为空（返回空切片）：尚未配置任何渠道是合法状态，供配置页从零创建。
-// 文件缺失、解析失败或单个渠道字段不完整仍返回错误。
+// ListChannels 读取 path 指向的 llm.yaml，返回全部渠道（原样，不做字段完整性校验）。
+// 容忍 channels 为空或不完整：配置页需要能列出并删除坏数据，而不是被 500 挡住。
+// 仅文件缺失或 YAML 解析失败时返回错误。
 func ListChannels(path string) ([]Channel, error) {
 	cfg, err := loadLenient(path)
 	if err != nil {
 		return nil, err
 	}
+	if cfg.Channels == nil {
+		return []Channel{}, nil
+	}
 	return cfg.Channels, nil
 }
 
-// loadLenient 读取并解析 llm.yaml，校验每个渠道字段完整性但允许 0 个渠道。
-// 与 Load（严格，要求至少一个渠道，供跑基准用）的区别仅在空配置的处理。
+// loadLenient 读取并解析 llm.yaml，允许 0 个渠道与字段不完整的渠道。
+// 与 Load（严格校验，供跑基准用）相对：配置管理 API 只关心文件能否读出来。
 func loadLenient(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -123,9 +104,6 @@ func loadLenient(path string) (*Config, error) {
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("config: 解析配置文件失败 %s: %w", path, err)
-	}
-	if err := cfg.validateChannels(); err != nil {
-		return nil, err
 	}
 	return &cfg, nil
 }
@@ -150,10 +128,13 @@ func EnsureFile(path string) error {
 }
 
 // AddChannel 向 path 指向的 llm.yaml 追加一个渠道并原子写回。
-// 渠道名已存在（不区分大小写）或新渠道字段不完整时返回错误，文件不会被修改。
+// 仅校验「新渠道」字段完整性与重名；不因文件中已有不完整渠道而失败。
 //
 // 通过 yaml.Node 操作节点树而非结构体往返，从而保留原文件的注释。
 func AddChannel(path string, ch Channel) error {
+	if err := validateChannel(ch); err != nil {
+		return err
+	}
 	doc, seq, indent, err := loadChannelsSeq(path)
 	if err != nil {
 		return err
@@ -162,19 +143,12 @@ func AddChannel(path string, ch Channel) error {
 		return fmt.Errorf("config: 渠道 %s 已存在", ch.Name)
 	}
 	seq.Content = append(seq.Content, channelToNode(ch))
-
-	var cfg Config
-	if err := doc.Decode(&cfg); err != nil {
-		return fmt.Errorf("config: 校验失败: %w", err)
-	}
-	if err := cfg.validate(); err != nil {
-		return err
-	}
 	return writeNode(path, doc, indent)
 }
 
 // RemoveChannel 从 path 指向的 llm.yaml 删除指定渠道并原子写回。
 // 渠道不存在（不区分大小写）时返回错误，文件不会被修改。
+// 允许删到 channels 为空，也不校验剩余渠道是否完整（便于清掉坏数据）。
 //
 // 通过 yaml.Node 操作节点树而非结构体往返，从而保留原文件的注释。
 // 删除首项时，会将其头部注释迁移到新的首项，避免丢失渠道上方的说明注释。
@@ -199,14 +173,6 @@ func RemoveChannel(path, name string) error {
 				first.HeadComment = removed.HeadComment
 			}
 		}
-	}
-
-	var cfg Config
-	if err := doc.Decode(&cfg); err != nil {
-		return fmt.Errorf("config: 校验失败: %w", err)
-	}
-	if err := cfg.validate(); err != nil {
-		return err
 	}
 	return writeNode(path, doc, indent)
 }

@@ -111,6 +111,7 @@
         "connectionStatus": "连接状态",
         "probeLatency": "探测延迟",
         "replyContent": "回复内容",
+        "reasoningContent": "思考内容",
         "columns": {
             "index": "序号",
             "model": "模型",

@@ -111,6 +111,7 @@
         "connectionStatus": "Connection",
         "probeLatency": "Probe Latency",
         "replyContent": "Reply",
+        "reasoningContent": "Thinking",
         "columns": {
             "index": "Index",
             "model": "Model",

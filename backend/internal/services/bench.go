@@ -116,12 +116,9 @@ func (s *Service) run(ctx context.Context, opts RunOptions) (channel, model stri
 				HTTP:     &http.Client{Transport: http.DefaultTransport.(*http.Transport).Clone()},
 				Provider: providerFor(ch.Name),
 			}
-			// 与原 CLI 行为一致：仅当关闭 thinking 时显式下发 disabled；
-			// 开启 thinking 时不设置字段，使用模型默认（部分模型默认即开启）。
-			if !opts.Thinking {
-				no := false
-				client.EnableThinking = &no
-			}
+			// Explicitly send thinking enabled/disabled so the gateway does not fall back to model defaults.
+			enableThinking := opts.Thinking
+			client.EnableThinking = &enableThinking
 
 			res, err := client.StreamChat(
 				httptrace.WithClientTrace(ctx, trace),
