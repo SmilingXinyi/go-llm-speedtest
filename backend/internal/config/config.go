@@ -17,10 +17,10 @@ import (
 
 // Channel 描述一个 LLM 渠道（OpenAI 兼容服务）。
 type Channel struct {
-	Name    string   `yaml:"name" json:"name"`           // 渠道名，如 nange / qianfan；用于 --channel 选择与 Provider 路由
-	BaseURL string   `yaml:"base_url" json:"base_url"`   // 例如 https://api.example.com/v1
-	Token   string   `yaml:"token" json:"token"`         // Bearer Token
-	Models  []string `yaml:"models" json:"models"`       // 该渠道支持的候选模型列表
+	Name    string   `yaml:"name" json:"name"`         // 渠道名，如 nange / qianfan；用于 --channel 选择与 Provider 路由
+	BaseURL string   `yaml:"base_url" json:"base_url"` // 例如 https://api.example.com/v1
+	Token   string   `yaml:"token" json:"token"`       // Bearer Token
+	Models  []string `yaml:"models" json:"models"`     // 该渠道支持的候选模型列表
 }
 
 // Config 是 llm.yaml 的根结构。
@@ -143,6 +143,28 @@ func AddChannel(path string, ch Channel) error {
 		return fmt.Errorf("config: 渠道 %s 已存在", ch.Name)
 	}
 	seq.Content = append(seq.Content, channelToNode(ch))
+	return writeNode(path, doc, indent)
+}
+
+// UpdateChannel 更新 path 指向的 llm.yaml 中指定名称的渠道并原子写回。
+// oldName 用于定位原渠道，ch 可以修改渠道名称；修改后的名称不能与其它渠道重复。
+// 仅校验待写入渠道，不因其它已有渠道不完整而失败。
+func UpdateChannel(path, oldName string, ch Channel) error {
+	if err := validateChannel(ch); err != nil {
+		return err
+	}
+	doc, seq, indent, err := loadChannelsSeq(path)
+	if err != nil {
+		return err
+	}
+	idx := findChannelIndex(seq, oldName)
+	if idx < 0 {
+		return fmt.Errorf("config: 渠道 %s 不存在", oldName)
+	}
+	if other := findChannelIndex(seq, ch.Name); other >= 0 && other != idx {
+		return fmt.Errorf("config: 渠道 %s 已存在", ch.Name)
+	}
+	updateChannelNode(seq.Content[idx], ch)
 	return writeNode(path, doc, indent)
 }
 
@@ -285,6 +307,58 @@ func channelToNode(ch Channel) *yaml.Node {
 		models,
 	)
 	return m
+}
+
+// updateChannelNode 更新渠道 mapping 的已知字段，同时保留渠道项及字段上的注释。
+// 对缺失字段的旧配置补充新字段，便于编辑历史上的不完整渠道。
+func updateChannelNode(item *yaml.Node, ch Channel) {
+	if item.Kind != yaml.MappingNode {
+		return
+	}
+	values := map[string]string{
+		"name":     ch.Name,
+		"base_url": ch.BaseURL,
+		"token":    ch.Token,
+	}
+	found := map[string]bool{}
+	for i := 0; i+1 < len(item.Content); i += 2 {
+		key, value := item.Content[i], item.Content[i+1]
+		name := key.Value
+		if name == "models" {
+			seq := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+			for _, model := range ch.Models {
+				seq.Content = append(seq.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: model})
+			}
+			seq.HeadComment = value.HeadComment
+			seq.LineComment = value.LineComment
+			seq.FootComment = value.FootComment
+			item.Content[i+1] = seq
+			found[name] = true
+			continue
+		}
+		if next, ok := values[name]; ok {
+			value.Value = next
+			value.Tag = "!!str"
+			found[name] = true
+		}
+	}
+	for _, name := range []string{"name", "base_url", "token"} {
+		if !found[name] {
+			item.Content = append(item.Content,
+				&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: name},
+				&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: values[name]},
+			)
+		}
+	}
+	if !found["models"] {
+		seq := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+		for _, model := range ch.Models {
+			seq.Content = append(seq.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: model})
+		}
+		item.Content = append(item.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "models"}, seq,
+		)
+	}
 }
 
 // writeNode 将文档节点序列化为 YAML 并原子写回 path：先写同目录临时文件再 rename，
