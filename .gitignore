@@ -3,5 +3,9 @@
 # Secrets and local config
 .env
 **/.env
+**/.env.*
+!**/.env.example
 backend/conf/llm.yaml
+backend/conf/prompt_templates.json
 backend/history/
+backend/internal/web/dist/
