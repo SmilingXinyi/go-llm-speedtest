@@ -18,6 +18,7 @@ import (
 	"github.com/labstack/echo/v5"
 
 	"github.com/SmilingXinyi/go-llm-speedtest/backend/internal/config"
+	"github.com/SmilingXinyi/go-llm-speedtest/backend/internal/prompts"
 	"github.com/SmilingXinyi/go-llm-speedtest/backend/internal/services"
 )
 
@@ -35,6 +36,7 @@ type Server struct {
 	staticDir  string
 	historyDir string
 	embedFS    fs.FS // 非 nil 时优先于磁盘静态目录
+	prompts    *prompts.Store
 }
 
 // New 构造一个 Server。HistoryDir 不存在时会尝试创建；配置文件不存在时会自动创建空模板。
@@ -55,6 +57,13 @@ func New(opts Options) *Server {
 		historyDir: opts.HistoryDir,
 		embedFS:    opts.EmbedFS,
 	}
+	// 提示词模板与 llm.yaml 同目录存放（prompt_templates.json），首次启动写入默认模板。
+	if opts.ConfigPath != "" {
+		s.prompts = prompts.NewStore(filepath.Join(filepath.Dir(opts.ConfigPath), "prompt_templates.json"))
+		if err := s.prompts.Ensure(); err != nil {
+			log.Printf("警告: 初始化提示词模板失败: %v", err)
+		}
+	}
 	// 内嵌前端要求根目录存在 index.html，否则视为无前端（降级到磁盘 / 纯 API）。
 	if s.embedFS != nil {
 		if f, err := s.embedFS.Open("index.html"); err != nil {
@@ -71,7 +80,12 @@ func New(opts Options) *Server {
 func (s *Server) Register(e *echo.Echo) {
 	e.GET("/api/channels", s.listChannels)
 	e.POST("/api/channels", s.addChannel)
+	e.PUT("/api/channels/:name", s.updateChannel)
 	e.DELETE("/api/channels/:name", s.removeChannel)
+	e.GET("/api/prompts", s.listPrompts)
+	e.POST("/api/prompts", s.addPrompt)
+	e.PUT("/api/prompts/:name", s.updatePrompt)
+	e.DELETE("/api/prompts/:name", s.removePrompt)
 	e.POST("/api/bench", s.runBench)
 	e.GET("/api/history", s.listHistory)
 	e.GET("/api/history/:name", s.getHistory)
@@ -135,6 +149,25 @@ func (s *Server) addChannel(c *echo.Context) error {
 	return c.JSON(http.StatusCreated, ch)
 }
 
+// updateChannel PUT /api/channels/:name —— 更新指定渠道并写回 llm.yaml。
+func (s *Server) updateChannel(c *echo.Context) error {
+	var ch config.Channel
+	if err := c.Bind(&ch); err != nil {
+		return s.fail(c, http.StatusBadRequest, fmt.Errorf("请求体解析失败: %w", err))
+	}
+	oldName := c.Param("name")
+	if err := config.UpdateChannel(s.cfgPath, oldName, ch); err != nil {
+		code := http.StatusBadRequest
+		if strings.Contains(err.Error(), "不存在") {
+			code = http.StatusNotFound
+		} else if strings.Contains(err.Error(), "已存在") {
+			code = http.StatusConflict
+		}
+		return s.fail(c, code, err)
+	}
+	return c.JSON(http.StatusOK, ch)
+}
+
 // removeChannel DELETE /api/channels/:name —— 删除指定渠道并写回 llm.yaml。
 func (s *Server) removeChannel(c *echo.Context) error {
 	name := c.Param("name")
@@ -148,13 +181,69 @@ func (s *Server) removeChannel(c *echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+// listPrompts GET /api/prompts —— 返回全部提示词模板。
+func (s *Server) listPrompts(c *echo.Context) error {
+	list, err := s.prompts.List()
+	if err != nil {
+		return s.fail(c, http.StatusInternalServerError, err)
+	}
+	return c.JSON(http.StatusOK, list)
+}
+
+// addPrompt POST /api/prompts —— 新建提示词模板。
+func (s *Server) addPrompt(c *echo.Context) error {
+	var t prompts.Template
+	if err := c.Bind(&t); err != nil {
+		return s.fail(c, http.StatusBadRequest, fmt.Errorf("请求体解析失败: %w", err))
+	}
+	if err := s.prompts.Add(t); err != nil {
+		code := http.StatusBadRequest
+		if strings.Contains(err.Error(), "已存在") {
+			code = http.StatusConflict
+		}
+		return s.fail(c, code, err)
+	}
+	return c.JSON(http.StatusCreated, t)
+}
+
+// updatePrompt PUT /api/prompts/:name —— 更新（可改名）指定提示词模板。
+func (s *Server) updatePrompt(c *echo.Context) error {
+	var t prompts.Template
+	if err := c.Bind(&t); err != nil {
+		return s.fail(c, http.StatusBadRequest, fmt.Errorf("请求体解析失败: %w", err))
+	}
+	if err := s.prompts.Update(c.Param("name"), t); err != nil {
+		code := http.StatusBadRequest
+		if strings.Contains(err.Error(), "不存在") {
+			code = http.StatusNotFound
+		} else if strings.Contains(err.Error(), "已存在") {
+			code = http.StatusConflict
+		}
+		return s.fail(c, code, err)
+	}
+	return c.JSON(http.StatusOK, t)
+}
+
+// removePrompt DELETE /api/prompts/:name —— 删除指定提示词模板。
+func (s *Server) removePrompt(c *echo.Context) error {
+	if err := s.prompts.Remove(c.Param("name")); err != nil {
+		code := http.StatusBadRequest
+		if strings.Contains(err.Error(), "不存在") {
+			code = http.StatusNotFound
+		}
+		return s.fail(c, code, err)
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
 // benchRequest 是 /api/bench 的请求体。
 type benchRequest struct {
-	Channel     string `json:"channel"`
-	Model       string `json:"model"`
-	Prompt      string `json:"prompt"`
-	Thinking    bool   `json:"thinking"`
-	Concurrency int    `json:"concurrency"`
+	Channel      string `json:"channel"`
+	Model        string `json:"model"`
+	SystemPrompt string `json:"system_prompt"`
+	Prompt       string `json:"prompt"`
+	Thinking     bool   `json:"thinking"`
+	Concurrency  int    `json:"concurrency"`
 }
 
 // benchResponse 是 /api/bench 的响应体：文件名 + CSV 内容。
@@ -175,6 +264,9 @@ func (s *Server) runBench(c *echo.Context) error {
 	if req.Channel == "" {
 		return s.fail(c, http.StatusBadRequest, fmt.Errorf("channel 不能为空"))
 	}
+	if strings.TrimSpace(req.Prompt) == "" {
+		return s.fail(c, http.StatusBadRequest, fmt.Errorf("提示词不能为空"))
+	}
 
 	cfg, err := config.Load(s.cfgPath)
 	if err != nil {
@@ -183,11 +275,12 @@ func (s *Server) runBench(c *echo.Context) error {
 	svc := services.New(cfg)
 
 	filename, data, err := svc.RunCSV(c.Request().Context(), services.RunOptions{
-		Channel:     req.Channel,
-		Model:       req.Model,
-		Prompt:      req.Prompt,
-		Thinking:    req.Thinking,
-		Concurrency: req.Concurrency,
+		Channel:      req.Channel,
+		Model:        req.Model,
+		SystemPrompt: req.SystemPrompt,
+		Prompt:       req.Prompt,
+		Thinking:     req.Thinking,
+		Concurrency:  req.Concurrency,
 	}, s.historyDir)
 	if err != nil {
 		// RunCSV 仅在渠道/模型校验失败或写文件失败时返回错误（单请求错误已落在各行 error 列）。
