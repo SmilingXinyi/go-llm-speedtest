@@ -11,6 +11,7 @@ import (
 	"crypto/tls"
 	"encoding/csv"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptrace"
 	"os"
@@ -28,12 +29,13 @@ import (
 
 // RunOptions 是一次 Bench 运行的参数。
 type RunOptions struct {
-	Channel     string // 渠道名（必填，需在 llm.yaml 中存在）
-	Model       string // 模型名；为空时取渠道 models[0]；非空时需在渠道 models 列表内
-	Prompt      string // prompt 文本（main.go 已完成 file:// 解析）
-	Thinking    bool   // 是否开启 thinking；false 时显式下发 disabled
-	Concurrency int    // 并发请求数，<1 视为 1
-	Out         string // "csv" 写文件，空串走控制台打印
+	Channel      string // 渠道名（必填，需在 llm.yaml 中存在）
+	Model        string // 模型名；为空时取渠道 models[0]；非空时需在渠道 models 列表内
+	SystemPrompt string // 系统提示词；为空则不发送 system 消息
+	Prompt       string // prompt 文本（main.go 已完成 file:// 解析）
+	Thinking     bool   // 是否开启 thinking；false 时显式下发 disabled
+	Concurrency  int    // 并发请求数，<1 视为 1
+	Out          string // "csv" 写文件，空串走控制台打印
 }
 
 // Service 持有已加载的渠道配置，提供 Bench 运行能力。
@@ -82,7 +84,11 @@ func (s *Service) run(ctx context.Context, opts RunOptions) (channel, model stri
 		return "", "", nil, fmt.Errorf("模型 %q 不在渠道 %s 的 models 列表中", model, ch.Name)
 	}
 
-	promptText := opts.Prompt
+	messages := make([]llm.Message, 0, 2)
+	if strings.TrimSpace(opts.SystemPrompt) != "" {
+		messages = append(messages, llm.Message{Role: "system", Content: opts.SystemPrompt})
+	}
+	messages = append(messages, llm.Message{Role: "user", Content: opts.Prompt})
 	n := opts.Concurrency
 	if n < 1 {
 		n = 1
@@ -122,11 +128,14 @@ func (s *Service) run(ctx context.Context, opts RunOptions) (channel, model stri
 
 			res, err := client.StreamChat(
 				httptrace.WithClientTrace(ctx, trace),
-				[]llm.Message{{Role: "user", Content: promptText}},
+				messages,
 				nil, nil,
 			)
 
 			rr := runResult{index: idx, result: res, err: err, boot: boot, ct: ct}
+			if err != nil {
+				log.Printf("bench %s/%s 请求 #%d 失败: %v", ch.Name, model, idx+1, err)
+			}
 			if err == nil && res != nil {
 				pl := ct.gotConn.Sub(res.StartedAt)
 				if ct.reused {
@@ -155,14 +164,14 @@ func (s *Service) Run(ctx context.Context, opts RunOptions) error {
 		return err
 	}
 	if opts.Out == "csv" {
-		filename, data := buildCSV(results, channel, model, opts.Thinking, opts.Prompt)
+		filename, data := buildCSV(results, channel, model, opts.Thinking, opts.SystemPrompt, opts.Prompt)
 		if err := os.WriteFile(filename, data, 0o644); err != nil {
 			return fmt.Errorf("写入 CSV 文件失败: %w", err)
 		}
 		fmt.Printf("结果已写入 %s\n", filename)
 		return nil
 	}
-	printConsole(results, channel, model, opts.Thinking, opts.Prompt, len(results))
+	printConsole(results, channel, model, opts.Thinking, opts.SystemPrompt, opts.Prompt, len(results))
 	return nil
 }
 
@@ -173,7 +182,7 @@ func (s *Service) RunCSV(ctx context.Context, opts RunOptions, dir string) (stri
 	if err != nil {
 		return "", nil, err
 	}
-	filename, data := buildCSV(results, channel, model, opts.Thinking, opts.Prompt)
+	filename, data := buildCSV(results, channel, model, opts.Thinking, opts.SystemPrompt, opts.Prompt)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", nil, fmt.Errorf("创建历史目录失败: %w", err)
 	}
@@ -190,11 +199,11 @@ func (s *Service) RunRows(ctx context.Context, opts RunOptions) ([]map[string]st
 	if err != nil {
 		return nil, err
 	}
-	return buildRows(results, channel, model, opts.Thinking, opts.Prompt), nil
+	return buildRows(results, channel, model, opts.Thinking, opts.SystemPrompt, opts.Prompt), nil
 }
 
 // buildRows 将 runResult 列表格式化为前端可消费的行（key 为英文字段名，value 均为字符串）。
-func buildRows(results []runResult, channel, model string, thinking bool, promptText string) []map[string]string {
+func buildRows(results []runResult, channel, model string, thinking bool, systemPrompt, promptText string) []map[string]string {
 	fmtT := func(t time.Time) string {
 		if t.IsZero() {
 			return ""
@@ -210,41 +219,42 @@ func buildRows(results []runResult, channel, model string, thinking bool, prompt
 	rows := make([]map[string]string, 0, len(results))
 	for _, rr := range results {
 		row := map[string]string{
-			"index":                strconv.Itoa(rr.index + 1),
-			"model":                "",
-			"channel":              channel,
-			"thinking":             strconv.FormatBool(thinking),
-			"prompt":               promptText,
-			"content":              "",
-			"reasoning_content":    "",
-			"finish_reason":        "",
-			"prompt_tokens":        "",
-			"completion_tokens":    "",
-			"total_tokens":         "",
-			"cached_tokens":        "",
-			"boot_time":            fmtT(rr.boot),
-			"dns_start":            fmtT(rr.ct.dnsStart),
-			"dns_done":             fmtT(rr.ct.dnsDone),
-			"dns_ms":               fmtMs(rr.ct.dnsDone.Sub(rr.ct.dnsStart)),
-			"tcp_start":            fmtT(rr.ct.tcpStart),
-			"tcp_done":             fmtT(rr.ct.tcpDone),
-			"tcp_ms":               fmtMs(rr.ct.tcpDone.Sub(rr.ct.tcpStart)),
-			"tls_start":            fmtT(rr.ct.tlsStart),
-			"tls_done":             fmtT(rr.ct.tlsDone),
-			"tls_ms":               fmtMs(rr.ct.tlsDone.Sub(rr.ct.tlsStart)),
-			"conn_reused":          strconv.FormatBool(rr.ct.reused),
-			"got_conn":             fmtT(rr.ct.gotConn),
-			"wrote_request":        fmtT(rr.ct.wroteRequest),
-			"started_at":           "",
-			"first_token_at":       "",
-			"ended_at":             "",
+			"index":                 strconv.Itoa(rr.index + 1),
+			"model":                 "",
+			"channel":               channel,
+			"thinking":              strconv.FormatBool(thinking),
+			"system_prompt":         systemPrompt,
+			"prompt":                promptText,
+			"content":               "",
+			"reasoning_content":     "",
+			"finish_reason":         "",
+			"prompt_tokens":         "",
+			"completion_tokens":     "",
+			"total_tokens":          "",
+			"cached_tokens":         "",
+			"boot_time":             fmtT(rr.boot),
+			"dns_start":             fmtT(rr.ct.dnsStart),
+			"dns_done":              fmtT(rr.ct.dnsDone),
+			"dns_ms":                fmtMs(rr.ct.dnsDone.Sub(rr.ct.dnsStart)),
+			"tcp_start":             fmtT(rr.ct.tcpStart),
+			"tcp_done":              fmtT(rr.ct.tcpDone),
+			"tcp_ms":                fmtMs(rr.ct.tcpDone.Sub(rr.ct.tcpStart)),
+			"tls_start":             fmtT(rr.ct.tlsStart),
+			"tls_done":              fmtT(rr.ct.tlsDone),
+			"tls_ms":                fmtMs(rr.ct.tlsDone.Sub(rr.ct.tlsStart)),
+			"conn_reused":           strconv.FormatBool(rr.ct.reused),
+			"got_conn":              fmtT(rr.ct.gotConn),
+			"wrote_request":         fmtT(rr.ct.wroteRequest),
+			"started_at":            "",
+			"first_token_at":        "",
+			"ended_at":              "",
 			"startup_to_request_ms": "",
-			"ttfb_ms":              "",
+			"ttfb_ms":               "",
 			"first_token_to_end_ms": "",
-			"total_ms":             "",
-			"probe_latency_ms":     "",
-			"token_rate":           "",
-			"error":                "",
+			"total_ms":              "",
+			"probe_latency_ms":      "",
+			"token_rate":            "",
+			"error":                 "",
 		}
 		if rr.err != nil {
 			row["error"] = rr.err.Error()
@@ -296,8 +306,8 @@ func safeName(s string) string {
 // buildCSV 将结果构建为 CSV 字节流，返回文件名与内容。
 // 文件名格式：bench_<模型>_<渠道>_<请求数量>_<日期>_<时间>.csv，
 // 模型/渠道经 safeName 处理（不含下划线），保证下划线仅作字段分隔、可反向解析。
-// 35 列双语表头；error 列与表头对齐（前端 Viewer 取表头英文段为 key）。
-func buildCSV(results []runResult, channel, model string, thinking bool, promptText string) (string, []byte) {
+// 36 列双语表头（system_prompt 追加在末尾以兼容既有列序）；error 列与表头对齐（前端 Viewer 取表头英文段为 key）。
+func buildCSV(results []runResult, channel, model string, thinking bool, systemPrompt, promptText string) (string, []byte) {
 	filename := fmt.Sprintf("bench_%s_%s_%d_%s.csv",
 		safeName(model), safeName(channel), len(results), time.Now().Format("20060102_150405"))
 	var buf bytes.Buffer
@@ -316,6 +326,7 @@ func buildCSV(results []runResult, channel, model string, thinking bool, promptT
 		"启动到请求耗时/startup_to_request_ms", "首字节耗时/ttfb_ms", "首token到结束耗时/first_token_to_end_ms", "总耗时/total_ms",
 		"探测延迟/probe_latency_ms", "token速率/token_rate",
 		"错误/error",
+		"系统提示词/system_prompt",
 	})
 	fmtT := func(t time.Time) string {
 		if t.IsZero() {
@@ -330,10 +341,11 @@ func buildCSV(results []runResult, channel, model string, thinking bool, promptT
 		return strconv.FormatInt(d.Milliseconds(), 10)
 	}
 	for _, rr := range results {
-		row := make([]string, 35)
+		row := make([]string, 36)
 		row[0] = strconv.Itoa(rr.index + 1)
 		row[3] = strconv.FormatBool(thinking)
 		row[4] = promptText
+		row[35] = systemPrompt
 		if rr.err != nil {
 			row[34] = rr.err.Error()
 		} else {
@@ -382,7 +394,7 @@ func buildCSV(results []runResult, channel, model string, thinking bool, promptT
 }
 
 // printConsole 将结果按原 CLI 格式打印到控制台。
-func printConsole(results []runResult, channel, model string, thinking bool, promptText string, n int) {
+func printConsole(results []runResult, channel, model string, thinking bool, systemPrompt, promptText string, n int) {
 	for _, rr := range results {
 		if n > 1 {
 			fmt.Printf("\n══════════════ 请求 #%d ══════════════\n", rr.index+1)
@@ -413,6 +425,9 @@ func printConsole(results []runResult, channel, model string, thinking bool, pro
 		}
 		fmt.Printf("  停止原因: %s\n\n", result.FinishReason)
 
+		if systemPrompt != "" {
+			fmt.Printf("【System Prompt】\n%s\n\n", systemPrompt)
+		}
 		fmt.Printf("【Prompt】\n%s\n\n", promptText)
 		fmt.Printf("【回复】\n%s\n\n", result.Content)
 		if thinking && result.ReasoningContent != "" {
