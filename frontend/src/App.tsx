@@ -3,6 +3,7 @@ import AppLayout from './layouts/AppLayout';
 import ReviewPage from './pages/ReviewPage';
 import ConfigPage from './pages/ConfigPage';
 import BenchPage from './pages/BenchPage';
+import PromptsPage from './pages/PromptsPage';
 
 export default function App() {
     return (
@@ -10,6 +11,7 @@ export default function App() {
             <Route element={<AppLayout />}>
                 <Route index element={<ReviewPage />} />
                 <Route path="bench" element={<BenchPage />} />
+                <Route path="prompts" element={<PromptsPage />} />
                 <Route path="config" element={<ConfigPage />} />
                 <Route path="history" element={<Navigate to="/" replace />} />
                 <Route path="*" element={<Navigate to="/" replace />} />

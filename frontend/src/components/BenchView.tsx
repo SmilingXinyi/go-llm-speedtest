@@ -173,6 +173,14 @@ function RowModal({row, onClose}: {row: Row; onClose: () => void}) {
                         </div>
                     )}
 
+                    {row.system_prompt && (
+                        <div className="flex flex-col gap-1">
+                            <div className="section-title">{t('common.systemPrompt')}</div>
+                            <pre className="bg-surface2 rounded-lg p-3 text-xs whitespace-pre-wrap break-words max-h-60 overflow-auto">
+                                {row.system_prompt}
+                            </pre>
+                        </div>
+                    )}
                     {row.prompt && (
                         <div className="flex flex-col gap-1">
                             <div className="section-title">{t('common.prompt')}</div>

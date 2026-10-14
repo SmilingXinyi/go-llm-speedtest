@@ -159,6 +159,7 @@ Key metrics per request:
 | -------- | --------------------- | ------------------------ |
 | `GET`    | `/api/channels`       | List configured channels |
 | `POST`   | `/api/channels`       | Add a channel            |
+| `PUT`    | `/api/channels/:name` | Update a channel         |
 | `DELETE` | `/api/channels/:name` | Remove a channel         |
 | `POST`   | `/api/bench`          | Run a benchmark          |
 | `GET`    | `/api/history`        | List result files        |
