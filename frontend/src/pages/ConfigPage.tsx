@@ -1,6 +1,6 @@
 import {useEffect, useState, useCallback} from 'react';
 import {useTranslation} from 'react-i18next';
-import {addChannel, listChannels, removeChannel, type Channel} from '../api';
+import {addChannel, listChannels, removeChannel, updateChannel, type Channel} from '../api';
 import {useToast} from '../components/Toast';
 
 function maskToken(token: string): string {
@@ -20,6 +20,7 @@ export default function ConfigPage() {
     const [form, setForm] = useState<Channel>({...EMPTY});
     const [modelsText, setModelsText] = useState('');
     const [saving, setSaving] = useState(false);
+    const [editingName, setEditingName] = useState<string | null>(null);
 
     const refresh = useCallback(async () => {
         setLoading(true);
@@ -50,7 +51,13 @@ export default function ConfigPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const handleAdd = async (e: React.FormEvent) => {
+    const resetForm = () => {
+        setForm({...EMPTY});
+        setModelsText('');
+        setEditingName(null);
+    };
+
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         const models = modelsText
             .split(/[\n,]/)
@@ -63,16 +70,26 @@ export default function ConfigPage() {
         }
         setSaving(true);
         try {
-            await addChannel(ch);
-            setForm({...EMPTY});
-            setModelsText('');
-            toast.success(t('config.success.added', {name: ch.name}));
+            if (editingName) {
+                await updateChannel(editingName, ch);
+                toast.success(t('config.success.updated', {name: ch.name}));
+            } else {
+                await addChannel(ch);
+                toast.success(t('config.success.added', {name: ch.name}));
+            }
+            resetForm();
             await refresh();
         } catch (e) {
             toast.error((e as Error).message);
         } finally {
             setSaving(false);
         }
+    };
+
+    const handleEdit = (ch: Channel) => {
+        setEditingName(ch.name);
+        setForm({...ch});
+        setModelsText(ch.models.join('\n'));
     };
 
     const handleRemove = async (name: string) => {
@@ -102,12 +119,17 @@ export default function ConfigPage() {
                             <div key={ch.name} className="card p-5 flex flex-col gap-3">
                                 <div className="flex items-center justify-between">
                                     <span className="text-base font-semibold text-accent">{ch.name}</span>
-                                    <button
-                                        className="btn btn-ghost btn-sm text-error hover:bg-error/10"
-                                        onClick={() => handleRemove(ch.name)}
-                                    >
-                                        {t('common.delete')}
-                                    </button>
+                                    <div className="flex gap-2">
+                                        <button className="btn btn-ghost btn-sm" onClick={() => handleEdit(ch)}>
+                                            {t('common.edit')}
+                                        </button>
+                                        <button
+                                            className="btn btn-ghost btn-sm text-error hover:bg-error/10"
+                                            onClick={() => handleRemove(ch.name)}
+                                        >
+                                            {t('common.delete')}
+                                        </button>
+                                    </div>
                                 </div>
                                 <div className="text-sm flex flex-wrap gap-x-2">
                                     <span className="text-text/60">{t('common.baseUrl')}</span>
@@ -134,8 +156,8 @@ export default function ConfigPage() {
             </section>
 
             <section className="flex flex-col gap-3">
-                <div className="section-title">{t('config.addChannel')}</div>
-                <form className="card p-5 grid grid-cols-1 sm:grid-cols-2 gap-4" onSubmit={handleAdd}>
+                <div className="section-title">{editingName ? t('config.editChannel') : t('config.addChannel')}</div>
+                <form className="card p-5 grid grid-cols-1 sm:grid-cols-2 gap-4" onSubmit={handleSubmit}>
                     <label className="block">
                         <span className="label">{t('config.nameLabel')}</span>
                         <input
@@ -174,12 +196,23 @@ export default function ConfigPage() {
                         />
                     </label>
                     <div className="sm:col-span-2">
-                        <button type="submit" className="btn btn-primary" disabled={saving}>
-                            {saving && (
-                                <span className="inline-block w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                        <div className="flex gap-2">
+                            <button type="submit" className="btn btn-primary" disabled={saving}>
+                                {saving && (
+                                    <span className="inline-block w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                                )}
+                                {saving
+                                    ? t('config.submitting')
+                                    : editingName
+                                      ? t('config.saveChanges')
+                                      : t('config.addChannel')}
+                            </button>
+                            {editingName && (
+                                <button type="button" className="btn btn-ghost" onClick={resetForm} disabled={saving}>
+                                    {t('common.cancel')}
+                                </button>
                             )}
-                            {saving ? t('config.submitting') : t('config.addChannel')}
-                        </button>
+                        </div>
                     </div>
                 </form>
             </section>

@@ -38,12 +38,32 @@ export const listChannels = () => request<Channel[]>('GET', '/api/channels');
 
 export const addChannel = (ch: Channel) => request<Channel>('POST', '/api/channels', ch);
 
+export const updateChannel = (name: string, ch: Channel) =>
+    request<Channel>('PUT', `/api/channels/${encodeURIComponent(name)}`, ch);
+
 export const removeChannel = (name: string) => request<void>('DELETE', `/api/channels/${encodeURIComponent(name)}`);
+
+// PromptTemplate 与后端 prompts.Template 对齐；system_prompt 与 prompt 至少填一个。
+export interface PromptTemplate {
+    name: string;
+    system_prompt: string;
+    prompt: string;
+}
+
+export const listPrompts = () => request<PromptTemplate[]>('GET', '/api/prompts');
+
+export const addPrompt = (t: PromptTemplate) => request<PromptTemplate>('POST', '/api/prompts', t);
+
+export const updatePrompt = (name: string, t: PromptTemplate) =>
+    request<PromptTemplate>('PUT', `/api/prompts/${encodeURIComponent(name)}`, t);
+
+export const removePrompt = (name: string) => request<void>('DELETE', `/api/prompts/${encodeURIComponent(name)}`);
 
 // BenchRunOptions 是 /api/bench 的请求体。
 export interface BenchRunOptions {
     channel: string;
     model?: string;
+    system_prompt?: string;
     prompt: string;
     thinking: boolean;
     concurrency: number;

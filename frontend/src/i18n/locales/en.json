@@ -7,6 +7,8 @@
         "or": "or",
         "back": "← Back",
         "clear": "← Clear",
+        "edit": "Edit",
+        "cancel": "Cancel",
         "delete": "Delete",
         "load": "Load",
         "on": "On",
@@ -17,11 +19,13 @@
         "models": "Models",
         "model": "Model",
         "channel": "Channel",
-        "error": "Error"
+        "error": "Error",
+        "systemPrompt": "System Prompt"
     },
     "nav": {
         "review": "Record Review",
         "bench": "Integration Test",
+        "prompts": "Prompt Templates",
         "config": "Channel Config"
     },
     "language": {
@@ -46,17 +50,49 @@
             "selectChannel": "Please select a channel first",
             "concurrencyMin": "Concurrency must be at least 1",
             "concurrencyMax": "Concurrency cannot exceed 100",
-            "emptyResult": "Empty result or CSV parse failed"
+            "emptyResult": "Empty result or CSV parse failed",
+            "promptRequired": "Prompt cannot be empty"
         },
         "success": {
             "testComplete": "Test complete, saved to history/{{filename}}"
-        }
+        },
+        "templateLabel": "Prompt template",
+        "templatePlaceholder": "(No template)",
+        "noTemplates": "(No templates — create one in Prompt Templates)",
+        "systemPromptPlaceholder": "Optional, sent as the system message"
+    },
+    "promptTemplates": {
+        "title": "Prompt Templates",
+        "noTemplates": "No templates yet. Create one using the form below.",
+        "addTemplate": "Add Template",
+        "editTemplate": "Edit Template",
+        "nameLabel": "Template name",
+        "namePlaceholder": "e.g. General assistant",
+        "systemPromptPlaceholder": "Optional; fill only this for a system-prompt-only template",
+        "promptPlaceholder": "Optional; fill only this for a user-prompt-only template",
+        "kindSystem": "System only",
+        "kindUser": "Prompt only",
+        "kindBoth": "System + Prompt",
+        "errors": {
+            "required": "Name is required and at least one of system prompt / prompt must be filled"
+        },
+        "success": {
+            "added": "Template {{name}} added",
+            "updated": "Template {{name}} updated",
+            "removed": "Template {{name}} removed"
+        },
+        "confirm": {
+            "delete": "Delete template {{name}}?"
+        },
+        "configured": "Templates"
     },
     "config": {
         "title": "Channel Config",
         "configured": "Configured Channels",
         "noChannels": "No channels yet. Add one using the form below.",
         "addChannel": "Add Channel",
+        "editChannel": "Edit Channel",
+        "saveChanges": "Save Changes",
         "nameLabel": "Channel name",
         "modelsLabel": "Models (comma or newline separated)",
         "namePlaceholder": "e.g. nange / qianfan",
@@ -69,6 +105,7 @@
         },
         "success": {
             "added": "Channel {{name}} added",
+            "updated": "Channel {{name}} updated",
             "removed": "Channel {{name}} removed"
         },
         "confirm": {

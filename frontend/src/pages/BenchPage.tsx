@@ -1,6 +1,6 @@
 import {useEffect, useState} from 'react';
 import {useTranslation} from 'react-i18next';
-import {listChannels, runBench, type Channel} from '../api';
+import {listChannels, listPrompts, runBench, type Channel, type PromptTemplate} from '../api';
 import {parseCSV, type Row} from '../csv';
 import {Dashboard} from '../components/BenchView';
 import {useToast} from '../components/Toast';
@@ -11,7 +11,10 @@ export default function BenchPage() {
     const [channels, setChannels] = useState<Channel[]>([]);
     const [channel, setChannel] = useState('');
     const [model, setModel] = useState('');
+    const [systemPrompt, setSystemPrompt] = useState('');
     const [prompt, setPrompt] = useState(() => t('bench.defaultPrompt'));
+    const [templates, setTemplates] = useState<PromptTemplate[]>([]);
+    const [templateName, setTemplateName] = useState('');
     const [thinking, setThinking] = useState(false);
     const [concurrency, setConcurrency] = useState('1');
 
@@ -39,6 +42,30 @@ export default function BenchPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    useEffect(() => {
+        let cancelled = false;
+        listPrompts()
+            .then(list => {
+                if (!cancelled) setTemplates(list);
+            })
+            .catch(e => {
+                if (!cancelled) toast.error((e as Error).message);
+            });
+        return () => {
+            cancelled = true;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // 仅覆盖模板中填写了的部分：单一 System 模板不会清空已填的提示词，反之亦然。
+    const applyTemplate = (name: string) => {
+        setTemplateName(name);
+        const tpl = templates.find(x => x.name === name);
+        if (!tpl) return;
+        if (tpl.system_prompt) setSystemPrompt(tpl.system_prompt);
+        if (tpl.prompt) setPrompt(tpl.prompt);
+    };
+
     const selectedChannel = channels.find(c => c.name === channel);
 
     const onChannelChange = (name: string) => {
@@ -63,6 +90,10 @@ export default function BenchPage() {
             toast.error(t('bench.errors.selectChannel'));
             return;
         }
+        if (!prompt.trim()) {
+            toast.error(t('bench.errors.promptRequired'));
+            return;
+        }
         const n = parseInt(concurrency);
         if (isNaN(n) || n < 1) {
             toast.error(t('bench.errors.concurrencyMin'));
@@ -76,7 +107,14 @@ export default function BenchPage() {
         setRows(null);
         setCurrent('');
         try {
-            const {filename, csv} = await runBench({channel, model, prompt, thinking, concurrency: n});
+            const {filename, csv} = await runBench({
+                channel,
+                model,
+                system_prompt: systemPrompt,
+                prompt,
+                thinking,
+                concurrency: n
+            });
             renderCSV(csv, filename);
             toast.success(t('bench.success.testComplete', {filename}));
         } catch (e) {
@@ -135,6 +173,35 @@ export default function BenchPage() {
                             />
                             <span className="text-sm text-text">{thinking ? t('common.on') : t('common.off')}</span>
                         </div>
+                    </label>
+                    <label className="block sm:col-span-2">
+                        <span className="label">{t('bench.templateLabel')}</span>
+                        <select className="input" value={templateName} onChange={e => applyTemplate(e.target.value)}>
+                            <option value="">
+                                {templates.length === 0 ? t('bench.noTemplates') : t('bench.templatePlaceholder')}
+                            </option>
+                            {templates.map(tpl => (
+                                <option key={tpl.name} value={tpl.name}>
+                                    {tpl.name}
+                                    {' · '}
+                                    {tpl.system_prompt && tpl.prompt
+                                        ? t('promptTemplates.kindBoth')
+                                        : tpl.system_prompt
+                                          ? t('promptTemplates.kindSystem')
+                                          : t('promptTemplates.kindUser')}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                    <label className="block sm:col-span-2">
+                        <span className="label">{t('common.systemPrompt')}</span>
+                        <textarea
+                            className="input min-h-20 resize-y"
+                            rows={3}
+                            value={systemPrompt}
+                            onChange={e => setSystemPrompt(e.target.value)}
+                            placeholder={t('bench.systemPromptPlaceholder')}
+                        />
                     </label>
                     <label className="block sm:col-span-2">
                         <span className="label">{t('common.prompt')}</span>
